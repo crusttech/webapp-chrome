@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+
+jobs:
+
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Checks
+        run: ./checks.sh
+
+      - name: Saving ENV Variables
+        run: |
+          echo "APP=corteza-webapp-one" >> $GITHUB_ENV
+          echo "ACR_REGISTRY=corteza.azurecr.io" >> $GITHUB_ENV
+          echo "DOCKER_IMAGE=corteza.azurecr.io/corteza-webapp-one" >> $GITHUB_ENV
+          echo "BRANCH_NAME=$(git symbolic-ref -q HEAD | sed 's/refs\/heads\///g')" >> $GITHUB_ENV
+
+
+  test:
+    runs-on: ubuntu-latest
+    needs:
+      - checks
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Run Tests
+        run: docker run --workdir=/corteza -v $PWD:/corteza node:12 make test
+
+
+  docker_image:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/')
+    needs:
+      - test
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login Azure Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.AZURE_ACR_USERNAME }}
+          password: "${{ secrets.AZURE_ACR_PASSWORD }}"
+
+      - name: Build and Push Docker Images
+        run: |
+          docker build -t ${{ env.DOCKER_IMAGE }}:$GITHUB_SHA -t ${{ env.DOCKER_IMAGE }}:${{ env.BRANCH_NAME }} .
+          docker push ${{ env.DOCKER_IMAGE }}:$GITHUB_SHA
+          docker push ${{ env.DOCKER_IMAGE }}:${{ env.BRANCH_NAME }}
+
+
+  release_linux_amd64:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/')
+    needs:
+      - test
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Create Releases
+        run: |
+          mkdir -p release
+          docker run --workdir=/corteza -v $PWD:/corteza node:12 make build
+          tar -C dist -czf release/${{ env.APP }}-${{ env.BRANCH_NAME }}.noarch.tar.gz $(dir dist)
+          tar -C dist -czf release/${{ env.APP }}-$GITHUB_SHA.noarch.tar.gz $(dir dist)
+
+      - name: Upload Releases
+        run: |
+          docker run -v $(pwd):/root/volume \
+                     mcr.microsoft.com/azure-cli az storage blob upload \
+                        --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+                        --container-name ${{ env.APP }} \
+                        --file release/${{ env.APP }}-${{ env.BRANCH_NAME }}.noarch.tar.gz \
+                        --name ${{ env.APP }}-${{ env.BRANCH_NAME }}.noarch.tar.gz
+
+          docker run -v $(pwd):/root/volume \
+                     mcr.microsoft.com/azure-cli az storage blob upload \
+                        --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+                        --container-name ${{ env.APP }} \
+                        --file release/${{ env.APP }}-$GITHUB_SHA.noarch.tar.gz \
+                        --name ${{ env.APP }}-$GITHUB_SHA.noarch.tar.gz
+
+      - name: Cache Branch Release
+        uses: actions/cache@v2
+        with:
+          path: release/${{ env.APP }}-${{ env.BRANCH_NAME }}.noarch.tar.gz
+          key: ${{ env.APP }}-${{ env.BRANCH_NAME }}.noarch.tar.gz
+
+      - name: Cache SHA Release
+        uses: actions/cache@v2
+        with:
+          path: release/${{ env.APP }}-$GITHUB_SHA.noarch.tar.gz
+          key: ${{ env.APP }}-$GITHUB_SHA.noarch.tar.gz
+
+
+  rpm_el8_x86_64:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/')
+    needs:
+      - release_linux_amd64
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v2

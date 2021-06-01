@@ -1,40 +1,47 @@
-.PHONY: dep test build release upload
+YARN                  ?= yarn
+YARN_FLAGS            ?=
+NAME             			?= corteza-webapp-one
 
-YARN_FLAGS            ?= --non-interactive --no-progress --silent --emoji false
-YARN                   = yarn $(YARN_FLAGS)
-
-REPO_NAME             ?= $(DRONE_REPO_NAME)
-REPO_NAME             ?= corteza-webapp-one
-
-BUILD_FLAVOUR         ?= corteza
 BUILD_FLAGS           ?= --production
-BUILD_DEST_DIR         = dist
-BUILD_TIME            ?= $(shell date +%FT%T%z)
-BUILD_VERSION         ?= $(shell git describe --tags --abbrev=0)
-BUILD_NAME             = $(REPO_NAME)-$(BUILD_VERSION)
+BUILD_DEST_DIR        ?= dist
+BUILD_VERSION         ?= $(shell git symbolic-ref -q HEAD | sed 's/refs\/heads\///g')
+BUILD_NAME            ?= $(NAME)-$(BUILD_VERSION)
 
-RELEASE_NAME           = $(BUILD_NAME).tar.gz
+RELEASE_DIR           ?= release
+RELEASE_NAME          ?= $(BUILD_NAME).noarch.tar.gz
 RELEASE_EXTRA_FILES   ?= README.md LICENSE CONTRIBUTING.md DCO
-RELEASE_PKEY          ?= .upload-rsa
 
-dep:
-	$(YARN) install
 
-test:
-	$(YARN) lint
-	$(YARN) test:unit
+.PHONY: help
+help: ## show make targets
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-\\.%]+:.*?## / {sub("\\\\n",sprintf("\n%22c"," "), $$2);printf " \033[36m%-20s\033[0m  %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build:
-	$(YARN) build $(BUILD_FLAGS)
+.PHONY: dep
+dep: ## install dependencies
+	@echo Installing dependencies
+	$(YARN) $(YARN_FLAGS) install
 
-release:
-	@ cp $(RELEASE_EXTRA_FILES) $(BUILD_DEST_DIR)
-	@ tar -C $(BUILD_DEST_DIR) -czf $(RELEASE_NAME) $(dir $(BUILD_DEST_DIR))
+.PHONY: test
+test: dep ## run tests
+	@echo Running linter
+	$(YARN) $(YARN_FLAGS) lint
+	@echo Running unit tests
+	$(YARN) $(YARN_FLAGS) test:unit
 
-upload: $(RELEASE_PKEY)
-	@ echo "put *.tar.gz" | sftp -q -i $(RELEASE_PKEY) $(RELEASE_SFTP_URI)
-	@ rm -f $(RELEASE_PKEY)
+.PHONY: build
+build: dep ## build application
+	@echo Building application
+	@rm -rf $(BUILD_DEST_DIR)
+	$(YARN) $(YARN_FLAGS) build $(BUILD_FLAGS)
 
-$(RELEASE_PKEY):
-	@ echo $(RELEASE_SFTP_KEY) | base64 -d > $(RELEASE_PKEY)
-	@ chmod 0400 $@
+.PHONY: release
+release: build ## release application
+	@echo Packing release
+	@cp $(RELEASE_EXTRA_FILES) $(BUILD_DEST_DIR)
+	@mkdir -p $(RELEASE_DIR)
+	@tar -C $(BUILD_DEST_DIR) -czf $(RELEASE_DIR)/$(RELEASE_NAME) $(dir $(BUILD_DEST_DIR))
+
+.PHONY: clean
+clean: ## clean build dir
+	@echo Cleaning
+	@rm -rf $(BUILD_DEST_DIR) $(RELEASE_DIR)

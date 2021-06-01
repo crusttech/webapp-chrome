@@ -1,0 +1,9 @@
+.git
+.gitignore
+.dockerignore
+.nyc_output
+node_modules
+Dockerfile
+dist
+release
+coverage
