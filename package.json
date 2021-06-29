@@ -31,7 +31,7 @@
     "i18next": "^15.0.9",
     "i18next-browser-languagedetector": "3.0.2",
     "kind-of": "^6.0.3",
-    "lodash": "^4.17.19",
+    "lodash": "^4.17.21",
     "minimist": "^1.2.5",
     "resolve-url-loader": "^3.1.2",
     "set-value": "^3.0.2",
