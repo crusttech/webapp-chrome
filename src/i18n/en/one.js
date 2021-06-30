@@ -36,4 +36,8 @@ export default {
       create: 'Create',
     },
   },
+  noApp: {
+    application: 'Application',
+    notFound: 'not found.',
+  },
 }

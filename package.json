@@ -30,6 +30,7 @@
     "bootstrap-vue": "^2.3.0",
     "i18next": "^15.0.9",
     "i18next-browser-languagedetector": "3.0.2",
+    "i18next-pseudo": "^2.2.1",
     "kind-of": "^6.0.3",
     "lodash": "^4.17.19",
     "minimist": "^1.2.5",
